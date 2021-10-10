@@ -1,0 +1,92 @@
+# --------------------------- config map ---------------------- #
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: web-app-configmap
+data:
+  conf.yaml: |
+    host: localhost
+    user: root
+    password: root
+    database: test
+    port: 3308
+# --------------------------- Service ---------------------- #
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app-svc
+  namespace: default
+spec:
+  #type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      #nodePort: 30011
+  selector:
+    app: web-app
+    tier: backend
+    version: 1.0.0
+---
+# --------------------------- Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app-deployment
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: web-app
+      tier: backend
+      version: 1.0.0
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: web-app
+        tier: backend
+        version: 1.0.0
+        logging: "json"
+      annotations:
+        co.elastic.logs/json.keys_under_root: "true"
+        co.elastic.logs/json.overwrite_keys: "true"
+        co.elastic.logs/json.add_error_key: "true"
+        co.elastic.logs/json.message_key: "message"
+    spec:
+      containers:
+        - name: web-app
+          image: 172.31.1.165/library/web-app:1.0
+          imagePullPolicy: Always
+          volumeMounts:
+            - readOnly: true
+              mountPath: conf
+              name: web-app-config
+          ports:
+            - containerPort: 8080
+      volumes:
+        - name: web-app-config
+          configMap:
+            name: web-app-configmap
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: harbor-key
+---
+# --------------------------- ingress,k8s 1.13---------------------- #
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    app: web-app
+    version: 1.0.0
+  name: web-app-ingress
+  namespace: default
+spec:
+  rules:
+    - http:
+        #port: 80
+        paths:
+          - path: /web-tutorial
+            backend:
+              serviceName: web-app-svc
+              servicePort: 8080
